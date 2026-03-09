@@ -36,7 +36,7 @@ public class AddGalleryButtonPatch
             // icon
             
             var icon = _galleryButton.GetNode<TextureRect>((NodePath)"Icon");
-            var iconTexture = ResourceLoader.Load<Texture2D>("res://images/packed/main_menu/submenu_icon_gallery.png");
+            var iconTexture = ResourceLoader.Load<Texture2D>("res://TheGallery/gallery.png");
             if (iconTexture != null)
             {
                 icon.Texture = iconTexture;

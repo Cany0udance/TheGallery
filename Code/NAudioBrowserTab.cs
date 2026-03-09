@@ -258,10 +258,18 @@ public partial class NAudioBrowserTab : Control
 
             foreach (var path in events)
             {
-                if      (path.Contains("/music/"))                                _musicEvents.Add(path);
-                else if (path.Contains("/ambience/") || path.Contains("/amb/"))   _ambienceEvents.Add(path);
-                else if (path.Contains("/sfx/"))                                  _sfxEvents.Add(path);
-                else                                                              _otherEvents.Add(path);
+                bool isLoop = path.Contains("_loop") || path.EndsWith("/loop");
+
+                if (path.Contains("/music/"))
+                    _musicEvents.Add(path);
+                else if (path.Contains("/ambience/") || path.Contains("/amb/"))
+                    _ambienceEvents.Add(path);
+                else if (isLoop)
+                    _ambienceEvents.Add(path);  // or a dedicated _loopEvents list
+                else if (path.Contains("/sfx/"))
+                    _sfxEvents.Add(path);
+                else
+                    _otherEvents.Add(path);
             }
 
             _musicEvents.Sort();
@@ -924,14 +932,22 @@ public partial class NAudioBrowserTab : Control
         StopAllInstances();
         NAudioManager.Instance?.StopMusic();
         _currentMusicPath = null;
-        ResetNowPlaying();
+
+        if (_currentLoopPath != null)
+            UpdateNowPlaying("Loop", _currentLoopPath);
+        else
+            ResetNowPlaying();
     }
 
     private void StopCurrentLoops()
     {
         NAudioManager.Instance?.StopAllLoops();
         _currentLoopPath = null;
-        ResetNowPlaying();
+
+        if (_currentMusicPath != null)
+            UpdateNowPlaying("Music", _currentMusicPath);
+        else
+            ResetNowPlaying();
     }
 
     private void StopAll()
