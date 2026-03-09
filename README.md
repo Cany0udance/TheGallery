@@ -9,3 +9,5 @@ The button brings the user to a new screen with two tabs: a VFX browser and an a
 <img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/9067bddc-03e7-46be-b131-40c3bb07681d" />
 
 <img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/224bcb21-0547-4c58-a68c-65176e97e806" />
+
+Shoutout to Korbo for the custom Gallery icon art as well as Dracia for the mod's image.
