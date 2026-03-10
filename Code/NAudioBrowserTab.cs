@@ -2,6 +2,7 @@
 using Godot;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Nodes.Audio;
+using MegaCrit.Sts2.Core.Runs;
 
 namespace TheGallery;
 
@@ -1058,7 +1059,9 @@ public partial class NAudioBrowserTab : Control
     public void CleanupAndRestore()
     {
         StopAll();
-        if (!string.IsNullOrEmpty(_musicToRestore))
+
+        if (!string.IsNullOrEmpty(_musicToRestore)
+            && RunManager.Instance?.IsInProgress != true)
             NAudioManager.Instance?.PlayMusic(_musicToRestore);
     }
 
