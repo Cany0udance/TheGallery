@@ -73,6 +73,8 @@ public partial class NAudioBrowserTab : Control
     private readonly List<string> _musicEvents = new();
     private readonly List<string> _ambienceEvents = new();
     private readonly List<string> _otherEvents = new();
+    private readonly List<string> _tmpSfxEvents = new();
+    private AudioStreamPlayer _tmpSfxPlayer;
     private readonly List<(Button button, string eventPath, string searchName, MarginContainer margin)> _audioEntries = new();
 
     // ═══════════════════════════════════════════════════════════════════
@@ -251,48 +253,88 @@ public partial class NAudioBrowserTab : Control
     // ═══════════════════════════════════════════════════════════════════
 
     private void PopulateEventList()
+{
+    try
     {
-        try
+        var events = ExtractAllEventPaths();
+        foreach (var path in events)
         {
-            var events = ExtractAllEventPaths();
+            bool isLoop = path.Contains("_loop") || path.EndsWith("/loop");
+            if (path.Contains("/music/"))
+                _musicEvents.Add(path);
+            else if (path.Contains("/ambience/") || path.Contains("/amb/"))
+                _ambienceEvents.Add(path);
+            else if (isLoop)
+                _ambienceEvents.Add(path);
+            else if (path.Contains("/sfx/"))
+                _sfxEvents.Add(path);
+            else
+                _otherEvents.Add(path);
+        }
 
-            foreach (var path in events)
+        // Discover TmpSfx entries via reflection
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            try
             {
-                bool isLoop = path.Contains("_loop") || path.EndsWith("/loop");
+                var tmpSfxType = assembly.GetTypes()
+                    .FirstOrDefault(t => t.Name == "TmpSfx");
+                if (tmpSfxType == null) continue;
 
-                if (path.Contains("/music/"))
-                    _musicEvents.Add(path);
-                else if (path.Contains("/ambience/") || path.Contains("/amb/"))
-                    _ambienceEvents.Add(path);
-                else if (isLoop)
-                    _ambienceEvents.Add(path);  // or a dedicated _loopEvents list
-                else if (path.Contains("/sfx/"))
-                    _sfxEvents.Add(path);
-                else
-                    _otherEvents.Add(path);
+                foreach (var field in tmpSfxType.GetFields(
+                    BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy))
+                {
+                    if (field.FieldType != typeof(string) || !field.IsLiteral) continue;
+                    if (field.GetValue(null) is string val
+                        && (val.EndsWith(".mp3") || val.EndsWith(".tres")))
+                    {
+                        var fullPath = "res://debug_audio/" + val;
+                        if (!_tmpSfxEvents.Contains(fullPath))
+                            _tmpSfxEvents.Add(fullPath);
+                    }
+                }
+
+                var assetPathsField = tmpSfxType.GetField("assetPaths",
+                    BindingFlags.Public | BindingFlags.Static);
+                if (assetPathsField?.GetValue(null) is IReadOnlyList<string> paths)
+                {
+                    foreach (var p in paths)
+                    {
+                        if (!_tmpSfxEvents.Contains(p))
+                            _tmpSfxEvents.Add(p);
+                    }
+                }
+                break;
             }
-
-            _musicEvents.Sort();
-            _sfxEvents.Sort();
-            _ambienceEvents.Sort();
-            _otherEvents.Sort();
-
-            int total = _musicEvents.Count + _sfxEvents.Count + _ambienceEvents.Count + _otherEvents.Count;
-            _entryCountLabel.Text = $"{total} events  ·  {_musicEvents.Count} music  ·  {_sfxEvents.Count} sfx  ·  {_ambienceEvents.Count} amb";
-
-            AddCategorySection(_leftListContainer,  "Music",    _musicEvents,    PlayAsMusic,   MusicTag);
-            AddCategorySection(_leftListContainer,  "Ambience", _ambienceEvents, PlayAsLoop,    AmbienceTag);
-            AddCategorySection(_rightListContainer, "SFX",      _sfxEvents,      PlayAsOneShot, SfxTag);
-
-            if (_otherEvents.Count > 0)
-                AddCategorySection(_rightListContainer, "Other", _otherEvents, PlayAsOneShot, OtherTag);
+            catch { }
         }
-        catch (Exception e)
-        {
-            _entryCountLabel.Text = "Error loading events";
-            _entryCountLabel.AddThemeColorOverride("font_color", ErrorText);
-        }
+
+        _musicEvents.Sort();
+        _sfxEvents.Sort();
+        _ambienceEvents.Sort();
+        _otherEvents.Sort();
+        _tmpSfxEvents.Sort();
+
+        int total = _musicEvents.Count + _sfxEvents.Count + _ambienceEvents.Count
+                  + _otherEvents.Count + _tmpSfxEvents.Count;
+        _entryCountLabel.Text = $"{total} events  ·  {_musicEvents.Count} music  ·  "
+                              + $"{_sfxEvents.Count} sfx  ·  {_ambienceEvents.Count} amb  ·  "
+                              + $"{_tmpSfxEvents.Count} tmp";
+
+        AddCategorySection(_leftListContainer,  "Music",    _musicEvents,    PlayAsMusic,   MusicTag);
+        AddCategorySection(_leftListContainer,  "Ambience", _ambienceEvents, PlayAsLoop,    AmbienceTag);
+        AddCategorySection(_rightListContainer, "SFX",      _sfxEvents,      PlayAsOneShot, SfxTag);
+        if (_tmpSfxEvents.Count > 0)
+            AddCategorySection(_rightListContainer, "Temp SFX", _tmpSfxEvents, PlayAsTmpSfx, SfxTag);
+        if (_otherEvents.Count > 0)
+            AddCategorySection(_rightListContainer, "Other", _otherEvents, PlayAsOneShot, OtherTag);
     }
+    catch (Exception e)
+    {
+        _entryCountLabel.Text = "Error loading events";
+        _entryCountLabel.AddThemeColorOverride("font_color", ErrorText);
+    }
+}
 
     private List<string> ExtractAllEventPaths()
     {
@@ -579,6 +621,31 @@ public partial class NAudioBrowserTab : Control
             NAudioManager.Instance?.PlayLoop(eventPath, false);
             _currentLoopPath = eventPath;
             UpdateNowPlaying("Loop", eventPath);
+        }
+        catch (Exception e)
+        {
+            UpdateNowPlaying(null, "Error: " + e.Message, true);
+        }
+    }
+    
+    private void PlayAsTmpSfx(string resourcePath)
+    {
+        try
+        {
+            var stream = ResourceLoader.Load<AudioStream>(resourcePath);
+            if (stream == null)
+            {
+                UpdateNowPlaying(null, "Not found: " + resourcePath, true);
+                return;
+            }
+
+            _tmpSfxPlayer ??= new AudioStreamPlayer();
+            if (_tmpSfxPlayer.GetParent() == null)
+                AddChild(_tmpSfxPlayer);
+
+            _tmpSfxPlayer.Stream = stream;
+            _tmpSfxPlayer.Play();
+            UpdateNowPlaying("TmpSFX", resourcePath);
         }
         catch (Exception e)
         {
@@ -957,9 +1024,12 @@ public partial class NAudioBrowserTab : Control
         NAudioManager.Instance?.StopAllLoops();
         _currentMusicPath = null;
         _currentLoopPath = null;
+
+        if (_tmpSfxPlayer != null && _tmpSfxPlayer.Playing)
+            _tmpSfxPlayer.Stop();
+
         ResetNowPlaying();
         ClearParameterControls();
-
         if (_selectedEntryButton != null)
         {
             ApplyEntryButtonStyle(_selectedEntryButton);
