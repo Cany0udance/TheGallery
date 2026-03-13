@@ -1,5 +1,7 @@
 # The Gallery
 
+*NOTE: Currently, you must play on the public beta branch to use this mod.*
+
 The Gallery adds a new button to the in-game Compendium screen.
 
 <img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/8a458565-896b-44a3-a2cd-c1e773fba0c4" />
