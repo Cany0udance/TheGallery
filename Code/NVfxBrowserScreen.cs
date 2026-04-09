@@ -17,7 +17,7 @@ public partial class NVfxBrowserScreen : NSubmenu
     private const float TabStartX = 24f;
     private const float IndicatorHeight = 3f;
     private const float SearchHeight = 36f;
-    private const float ToolbarHeight = 40f;
+    private const float ToolbarHeight = 72f;
     private const float GridSpacing = 48f;
     private const float CrosshairSize = 20f;
     private const string VfxRootDir = "res://scenes/vfx";
@@ -54,6 +54,9 @@ public partial class NVfxBrowserScreen : NSubmenu
     private Button _audioTabButton;
     private ColorRect _vfxTabIndicator;
     private ColorRect _audioTabIndicator;
+    private Control _creaturesTab;
+    private Button _creaturesTabButton;
+    private ColorRect _creaturesTabIndicator;
     private Label _currentVfxLabel;
     private LineEdit _searchBox;
     private VBoxContainer _vfxListContainer;
@@ -67,6 +70,20 @@ public partial class NVfxBrowserScreen : NSubmenu
     private readonly List<(Button button, string path, string name)> _vfxEntries = new();
 
     protected override Control InitialFocusedControl => null;
+    
+    private static readonly (string label, Color color)[] PreviewBgOptions =
+    {
+        ("Default", new Color(0.05f, 0.05f, 0.07f, 1f)),
+        ("Green",   new Color(0f,    0.85f, 0f,    1f)),
+        ("Blue",    new Color(0f,    0f,    0.85f, 1f)),
+        ("Red",     new Color(0.85f, 0f,    0f,    1f)),
+        ("White",   new Color(1f,    1f,    1f,    1f)),
+        ("Black",   new Color(0f,    0f,    0f,    1f)),
+    };
+    private ColorRect _previewBgRect;
+    
+    private readonly List<ColorRect> _vfxGridLines = new();
+    private readonly List<ColorRect> _vfxCrosshairLines = new();
 
     // ═══════════════════════════════════════════════════════════════════
     // Lifecycle
@@ -90,14 +107,27 @@ public partial class NVfxBrowserScreen : NSubmenu
 
             BuildVfxTab(screenSize, contentTop, availableHeight);
             BuildAudioTab(screenSize, contentTop, availableHeight);
+            BuildCreaturesTab(screenSize, contentTop, availableHeight);
             BuildBackButton();
 
-            SwitchTab(true);
+            SwitchTab(0);
         }
         catch (Exception e)
         {
             GD.PrintErr($"[VfxBrowserScreen] Error in _Ready: {e}");
         }
+    }
+    
+    private void BuildCreaturesTab(Vector2 screenSize, float contentTop, float availableHeight)
+    {
+        _creaturesTab = CreateTabPanel("CreaturesTab", screenSize.X, contentTop, availableHeight);
+        _creaturesTab.Visible = false;
+        AddChild(_creaturesTab);
+
+        var creatureBrowser = new NCreatureAnimBrowserTab();
+        creatureBrowser.SetAnchorsPreset(LayoutPreset.FullRect);
+        _creaturesTab.AddChild(creatureBrowser);
+        creatureBrowser.Initialize();
     }
 
     protected override void ConnectSignals() => base.ConnectSignals();
@@ -109,6 +139,11 @@ public partial class NVfxBrowserScreen : NSubmenu
 
         _audioTab?.GetChildren()
             .OfType<NAudioBrowserTab>()
+            .FirstOrDefault()
+            ?.CleanupAndRestore();
+        
+        _creaturesTab?.GetChildren()
+            .OfType<NCreatureAnimBrowserTab>()
             .FirstOrDefault()
             ?.CleanupAndRestore();
     }
@@ -129,16 +164,23 @@ public partial class NVfxBrowserScreen : NSubmenu
 
         float audioTabX = TabStartX + TabWidth + 8;
 
-        _vfxTabButton = CreateTabButton("VFX", TabStartX, () => SwitchTab(true));
+        _vfxTabButton = CreateTabButton("VFX", TabStartX, () => SwitchTab(0));
         AddChild(_vfxTabButton);
         _vfxTabIndicator = CreateTabIndicator(TabStartX);
         AddChild(_vfxTabIndicator);
 
-        _audioTabButton = CreateTabButton("Audio", audioTabX, () => SwitchTab(false));
+        _audioTabButton = CreateTabButton("Audio", audioTabX, () => SwitchTab(1));
         AddChild(_audioTabButton);
         _audioTabIndicator = CreateTabIndicator(audioTabX);
         _audioTabIndicator.Visible = false;
         AddChild(_audioTabIndicator);
+        
+        float creaturesTabX = audioTabX + TabWidth + 8;
+        _creaturesTabButton = CreateTabButton("Creatures", creaturesTabX, () => SwitchTab(2));
+        AddChild(_creaturesTabButton);
+        _creaturesTabIndicator = CreateTabIndicator(creaturesTabX);
+        _creaturesTabIndicator.Visible = false;
+        AddChild(_creaturesTabIndicator);
     }
 
     private Button CreateTabButton(string text, float x, Action onPressed)
@@ -162,16 +204,19 @@ public partial class NVfxBrowserScreen : NSubmenu
         Size = new Vector2(TabWidth, IndicatorHeight)
     };
 
-    private void SwitchTab(bool showVfx)
+    private void SwitchTab(int tabIndex)
     {
-        _vfxTab.Visible = showVfx;
-        _audioTab.Visible = !showVfx;
+        _vfxTab.Visible = tabIndex == 0;
+        _audioTab.Visible = tabIndex == 1;
+        _creaturesTab.Visible = tabIndex == 2;
 
-        SetTabButtonColors(_vfxTabButton, showVfx);
-        SetTabButtonColors(_audioTabButton, !showVfx);
+        SetTabButtonColors(_vfxTabButton, tabIndex == 0);
+        SetTabButtonColors(_audioTabButton, tabIndex == 1);
+        SetTabButtonColors(_creaturesTabButton, tabIndex == 2);
 
-        _vfxTabIndicator.Visible = showVfx;
-        _audioTabIndicator.Visible = !showVfx;
+        _vfxTabIndicator.Visible = tabIndex == 0;
+        _audioTabIndicator.Visible = tabIndex == 1;
+        _creaturesTabIndicator.Visible = tabIndex == 2;
     }
 
     private static void SetTabButtonColors(Button btn, bool active)
@@ -266,6 +311,8 @@ public partial class NVfxBrowserScreen : NSubmenu
         toolbarBg.Position = new Vector2(previewX, Padding);
         toolbarBg.Size = new Vector2(previewWidth, ToolbarHeight);
         parent.AddChild(toolbarBg);
+        
+        BuildBgButtons(parent, previewX);
 
         _currentVfxLabel = new Label
         {
@@ -273,7 +320,7 @@ public partial class NVfxBrowserScreen : NSubmenu
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Center,
             Position = new Vector2(previewX + 16, Padding + 2),
-            Size = new Vector2(previewWidth - 110, ToolbarHeight - 4)
+            Size = new Vector2(previewWidth - 110, 36)
         };
         ApplyFont(_currentVfxLabel, _fontBold, 14);
         _currentVfxLabel.AddThemeColorOverride("font_color", TextDim);
@@ -296,10 +343,19 @@ public partial class NVfxBrowserScreen : NSubmenu
         float previewTop = Padding + ToolbarHeight;
         float previewHeight = availableHeight - Padding * 2 - ToolbarHeight;
 
-        var previewPanelBg = CreateRoundedRect(PreviewBg, PanelBorder, 8, 1, false, false, true, true);
-        previewPanelBg.Position = new Vector2(previewX, previewTop);
-        previewPanelBg.Size = new Vector2(previewWidth, previewHeight);
-        parent.AddChild(previewPanelBg);
+// Replace the previewPanelBg block with:
+        var previewPanelBorder = CreateRoundedRect(Colors.Transparent, PanelBorder, 8, 1, false, false, true, true);
+        previewPanelBorder.Position = new Vector2(previewX, previewTop);
+        previewPanelBorder.Size = new Vector2(previewWidth, previewHeight);
+        parent.AddChild(previewPanelBorder);
+
+        _previewBgRect = new ColorRect
+        {
+            Color = PreviewBgOptions[0].color,
+            Position = new Vector2(previewX + 1, previewTop + 1),
+            Size = new Vector2(previewWidth - 2, previewHeight - 2)
+        };
+        parent.AddChild(_previewBgRect);
 
         BuildPreviewGrid(parent, previewX, previewTop, previewWidth, previewHeight);
         BuildCrosshair(parent, previewX, previewTop, previewWidth, previewHeight);
@@ -313,23 +369,120 @@ public partial class NVfxBrowserScreen : NSubmenu
         };
         parent.AddChild(_previewArea);
     }
-
-    private static void BuildPreviewGrid(Control parent, float x, float y, float width, float height)
+    
+private void BuildBgButtons(Control parent, float previewX)
     {
-        for (float gx = GridSpacing; gx < width; gx += GridSpacing)
-            AddColorStrip(parent, new Vector2(x + gx, y), 1, height, GridLineColor);
+        float by = Padding + 42;
+        float bx = previewX + 16;
 
-        for (float gy = GridSpacing; gy < height; gy += GridSpacing)
-            AddColorStrip(parent, new Vector2(x, y + gy), width, 1, GridLineColor);
+        var label = new Label
+        {
+            Text = "BG:",
+            Position = new Vector2(bx, by + 2),
+            Size = new Vector2(24, 20)
+        };
+        ApplyFont(label, _fontRegular, 11);
+        label.AddThemeColorOverride("font_color", TextDim);
+        parent.AddChild(label);
+
+        float btnX = bx + 28;
+        foreach (var (name, color) in PreviewBgOptions)
+        {
+            var swatch = new Button
+            {
+                Position = new Vector2(btnX, by),
+                Size = new Vector2(24, 24),
+                TooltipText = name
+            };
+
+            var swatchStyle = new StyleBoxFlat { BgColor = color, BorderColor = PanelBorder };
+            SetAllCornerRadius(swatchStyle, 3);
+            SetAllBorderWidth(swatchStyle, 1);
+            swatch.AddThemeStyleboxOverride("normal", swatchStyle);
+
+            var hoverStyle = new StyleBoxFlat { BgColor = color, BorderColor = Accent };
+            SetAllCornerRadius(hoverStyle, 3);
+            SetAllBorderWidth(hoverStyle, 1);
+            swatch.AddThemeStyleboxOverride("hover", hoverStyle);
+            swatch.AddThemeStyleboxOverride("pressed", hoverStyle);
+            swatch.AddThemeStyleboxOverride("focus", swatchStyle);
+
+            var col = color;
+            swatch.Pressed += () => _previewBgRect.Color = col;
+            parent.AddChild(swatch);
+
+            btnX += 32;
+        }
+
+        btnX += 8;
+        var gridToggle = new CheckBox
+        {
+            Text = "Grid",
+            ButtonPressed = true,
+            Position = new Vector2(btnX, by),
+            Size = new Vector2(55, 24),
+            TooltipText = "Toggle grid lines"
+        };
+        ApplyFont(gridToggle, _fontRegular, 11);
+        gridToggle.AddThemeColorOverride("font_color", TextDim);
+        gridToggle.Toggled += visible =>
+        {
+            foreach (var line in _vfxGridLines)
+                line.Visible = visible;
+            foreach (var line in _vfxCrosshairLines)
+                line.Visible = visible;
+        };
+        parent.AddChild(gridToggle);
     }
 
-    private static void BuildCrosshair(Control parent, float x, float y, float width, float height)
+    private void BuildPreviewGrid(Control parent, float x, float y, float width, float height)
+    {
+        for (float gx = GridSpacing; gx < width; gx += GridSpacing)
+        {
+            var line = new ColorRect
+            {
+                Color = GridLineColor,
+                Position = new Vector2(x + gx, y),
+                Size = new Vector2(1, height)
+            };
+            parent.AddChild(line);
+            _vfxGridLines.Add(line);
+        }
+        for (float gy = GridSpacing; gy < height; gy += GridSpacing)
+        {
+            var line = new ColorRect
+            {
+                Color = GridLineColor,
+                Position = new Vector2(x, y + gy),
+                Size = new Vector2(width, 1)
+            };
+            parent.AddChild(line);
+            _vfxGridLines.Add(line);
+        }
+    }
+
+    private void BuildCrosshair(Control parent, float x, float y, float width, float height)
     {
         float cx = x + width / 2;
         float cy = y + height / 2;
 
-        AddColorStrip(parent, new Vector2(cx - CrosshairSize, cy), CrosshairSize * 2, 1, CrosshairCol);
-        AddColorStrip(parent, new Vector2(cx, cy - CrosshairSize), 1, CrosshairSize * 2, CrosshairCol);
+        var h = new ColorRect
+        {
+            Color = CrosshairCol,
+            Position = new Vector2(cx - CrosshairSize, cy),
+            Size = new Vector2(CrosshairSize * 2, 1)
+        };
+        parent.AddChild(h);
+        _vfxCrosshairLines.Add(h);
+
+        var v = new ColorRect
+        {
+            Color = CrosshairCol,
+            Position = new Vector2(cx, cy - CrosshairSize),
+            Size = new Vector2(1, CrosshairSize * 2)
+        };
+        parent.AddChild(v);
+        _vfxCrosshairLines.Add(v);
     }
 
     // ═══════════════════════════════════════════════════════════════════
